@@ -41,6 +41,7 @@
 #include "hw/misc/esp32c3_rtc_cntl.h"
 #include "hw/misc/esp32c3_aes.h"
 #include "hw/misc/esp32c3_jtag.h"
+#include "hw/dma/esp32c3_gdma.h"
 
 #define ESP32C3_IO_WARNING          0
 
@@ -66,6 +67,7 @@ struct Esp32C3MachineState {
     ESP32C3CacheState cache;
     ESP32C3EfuseState efuse;
     ESP32C3ClockState clock;
+    ESP32C3GdmaState gdma;
     ESP32C3AesState aes;
     ESP32C3ShaState sha;
     ESP32C3TimgState timg[2];
@@ -171,6 +173,7 @@ static void esp32c3_cpu_reset(void* opaque, int n, int level)
         device_cold_reset(DEVICE(&s->cache));
         device_cold_reset(DEVICE(&s->efuse));
         device_cold_reset(DEVICE(&s->clock));
+        device_cold_reset(DEVICE(&s->gdma));
         device_cold_reset(DEVICE(&s->aes));
         device_cold_reset(DEVICE(&s->sha));
         device_cold_reset(DEVICE(&s->systimer));
@@ -313,6 +316,7 @@ static void esp32c3_machine_init(MachineState *machine)
     object_initialize_child(OBJECT(machine), "clock", &ms->clock, TYPE_ESP32C3_CLOCK);
     object_initialize_child(OBJECT(machine), "sha", &ms->sha, TYPE_ESP32C3_SHA);
     object_initialize_child(OBJECT(machine), "aes", &ms->aes, TYPE_ESP32C3_AES);
+    object_initialize_child(OBJECT(machine), "gdma", &ms->gdma, TYPE_ESP32C3_GDMA);
     object_initialize_child(OBJECT(machine), "timg0", &ms->timg[0], TYPE_ESP32C3_TIMG);
     object_initialize_child(OBJECT(machine), "timg1", &ms->timg[1], TYPE_ESP32C3_TIMG);
     object_initialize_child(OBJECT(machine), "systimer", &ms->systimer, TYPE_ESP32C3_SYSTIMER);
@@ -467,6 +471,20 @@ static void esp32c3_machine_init(MachineState *machine)
             sysbus_connect_irq(SYS_BUS_DEVICE(&ms->systimer), i,
                            qdev_get_gpio_in(intmatrix_dev, ETS_SYSTIMER_TARGET0_EDGE_INTR_SOURCE + i));
         }
+    }
+
+    /* GDMA Realization */
+    {
+        object_property_set_link(OBJECT(&ms->gdma), "soc_mr", OBJECT(dram), &error_abort);
+        qdev_realize(DEVICE(&ms->gdma), &ms->periph_bus, &error_fatal);
+        MemoryRegion *mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&ms->gdma), 0);
+        memory_region_add_subregion_overlap(sys_mem, DR_REG_GDMA_BASE, mr, 0);
+        /* Connect the IRQs to the Interrupt Matrix */
+        for (int i = 0; i < ESP32C3_GDMA_CHANNEL_COUNT; i++) {
+            sysbus_connect_irq(SYS_BUS_DEVICE(&ms->gdma), i,
+                               qdev_get_gpio_in(intmatrix_dev, ETS_DMA_CH0_INTR_SOURCE + i));
+        }
+
     }
 
     /* Open and load the "bios", which is the ROM binary, also named "first stage bootloader" */
