@@ -136,6 +136,9 @@ softmmu_ss.add(when: 'CONFIG_XTENSA_ESP32', if_true: files(
   'esp32_flash_enc.c',
   'ssi_psram.c'
 ))
+softmmu_ss.add(when: 'CONFIG_RISCV_ESP32C3', if_true: files(
+  'esp32c3_cache.c'
+))
 
 if gcrypt.found()
   softmmu_ss.add(when: [gcrypt, 'CONFIG_XTENSA_ESP32'], if_true: files(
