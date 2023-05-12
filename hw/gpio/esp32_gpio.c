@@ -60,6 +60,9 @@ static void esp32_gpio_init(Object *obj)
     Esp32GpioState *s = ESP32_GPIO(obj);
     SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
 
+    /* Set the default value for the strap_mode property */
+    object_property_set_int(obj, "strap_mode", ESP32_STRAP_MODE_FLASH_BOOT, &error_fatal);
+
     memory_region_init_io(&s->iomem, obj, &uart_ops, s,
                           TYPE_ESP32_GPIO, 0x1000);
     sysbus_init_mmio(sbd, &s->iomem);
@@ -67,7 +70,9 @@ static void esp32_gpio_init(Object *obj)
 }
 
 static Property esp32_gpio_properties[] = {
-    DEFINE_PROP_UINT32("strap_mode", Esp32GpioState, strap_mode, ESP32_STRAP_MODE_FLASH_BOOT),
+    /* The strap_mode needs to be explicitly set in the instance init, thus, set
+     * the default value to 0. */
+    DEFINE_PROP_UINT32("strap_mode", Esp32GpioState, strap_mode, 0),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -85,7 +90,8 @@ static const TypeInfo esp32_gpio_info = {
     .parent = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(Esp32GpioState),
     .instance_init = esp32_gpio_init,
-    .class_init = esp32_gpio_class_init
+    .class_init = esp32_gpio_class_init,
+    .class_size = sizeof(Esp32GpioClass),
 };
 
 static void esp32_gpio_register_types(void)
