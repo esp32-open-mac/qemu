@@ -46,6 +46,8 @@
 
 #define ESP32C3_RESET_ADDRESS       0x40000000
 
+#define MB (1024*1024)
+
 
 /* Define a new "class" which derivates from "MachineState" */
 struct Esp32C3MachineState {
@@ -189,6 +191,41 @@ static void esp32c3_cpu_reset(void* opaque, int n, int level)
     }
 }
 
+static void esp32c3_init_spi_flash(Esp32C3MachineState *ms, BlockBackend* blk)
+{
+    DeviceState *spi_master = DEVICE(&ms->spi1);
+    BusState* spi_bus = qdev_get_child_bus(spi_master, "spi");
+    const char* flash_model = NULL;
+    int64_t image_size = blk_getlength(blk);
+
+    switch (image_size) {
+        case 2 * MB:
+            flash_model = "w25x16";
+            break;
+        case 4 * MB:
+            flash_model = "gd25q32";
+            break;
+        case 8 * MB:
+            flash_model = "gd25q64";
+            break;
+        case 16 * MB:
+            flash_model = "is25lp128";
+            break;
+        default:
+            error_report("Drive size error: only 2, 4, 8, and 16MB images are supported");
+            return;
+    }
+
+    /* Create the SPI flash model */
+    DeviceState *flash_dev = qdev_new(flash_model);
+    qdev_prop_set_drive(flash_dev, "drive", blk);
+
+    /* Realize the SPI flash, its "drive" (blk) property must already be set! */
+    qdev_realize(flash_dev, spi_bus, &error_fatal);
+    qdev_connect_gpio_out_named(spi_master, SSI_GPIO_CS, 0,
+                                qdev_get_gpio_in_named(flash_dev, SSI_GPIO_CS, 0));
+}
+
 
 static void esp32c3_machine_init(MachineState *machine)
 {
@@ -325,17 +362,8 @@ static void esp32c3_machine_init(MachineState *machine)
         qdev_realize(DEVICE(&ms->spi1), &ms->periph_bus, &error_fatal);
         MemoryRegion *mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&ms->spi1), 0);
         memory_region_add_subregion_overlap(sys_mem, DR_REG_SPI1_BASE, mr, 0);
-
-
-        DeviceState *flash_dev = qdev_new("gd25q32");
-        DeviceState *spi_master = DEVICE(&ms->spi1);
-        BusState* spi_bus = qdev_get_child_bus(spi_master, "spi");
-        qdev_realize(flash_dev, spi_bus, &error_fatal);
-        qdev_connect_gpio_out_named(spi_master, SSI_GPIO_CS, 0,
-                                    qdev_get_gpio_in_named(flash_dev, SSI_GPIO_CS, 0));
-        qdev_prop_set_drive(flash_dev, "drive", blk);
+        esp32c3_init_spi_flash(ms, blk);
     }
-
 
     for (int i = 0; i < ESP32C3_UART_COUNT; ++i) {
         const hwaddr uart_base[] = { DR_REG_UART_BASE, DR_REG_UART1_BASE };
