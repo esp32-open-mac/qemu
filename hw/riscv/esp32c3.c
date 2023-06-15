@@ -426,13 +426,6 @@ static void esp32c3_machine_init(MachineState *machine)
         memory_region_add_subregion_overlap(sys_mem, DR_REG_SHA_BASE, mr, 0);
     }
 
-    /* AES realization */
-    {
-        qdev_realize(DEVICE(&ms->aes), &ms->periph_bus, &error_fatal);
-        MemoryRegion *mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&ms->aes), 0);
-        memory_region_add_subregion_overlap(sys_mem, DR_REG_AES_BASE, mr, 0);
-    }
-
     /* Timer Groups realization */
     {
         qdev_realize(DEVICE(&ms->timg[0]), &ms->periph_bus, &error_fatal);
@@ -485,6 +478,16 @@ static void esp32c3_machine_init(MachineState *machine)
                                qdev_get_gpio_in(intmatrix_dev, ETS_DMA_CH0_INTR_SOURCE + i));
         }
 
+    }
+
+    /* AES realization */
+    {
+        ms->aes.gdma = &ms->gdma;
+        qdev_realize(DEVICE(&ms->aes), &ms->periph_bus, &error_fatal);
+        MemoryRegion *mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&ms->aes), 0);
+        memory_region_add_subregion_overlap(sys_mem, DR_REG_AES_BASE, mr, 0);
+        sysbus_connect_irq(SYS_BUS_DEVICE(&ms->aes), 0,
+                           qdev_get_gpio_in(intmatrix_dev, ETS_AES_INTR_SOURCE));
     }
 
     /* Open and load the "bios", which is the ROM binary, also named "first stage bootloader" */
