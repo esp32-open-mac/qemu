@@ -102,12 +102,18 @@ typedef struct ESP32C3GdmaState {
  *
  * @param s GDMA state
  * @param periph Peripheral to search
- * @param dir Direction: ESP32C3_GDMA_IN_IDX or ESP32C3_GDMA_OUT_IDX
+ * @param dir Direction from the GDMA point of view: ESP32C3_GDMA_IN_IDX or ESP32C3_GDMA_OUT_IDX.
+ *            For example, to find a channel that needs to be written to, use ESP32C3_GDMA_IN_IDX
+ *            (because GDMA receives the data)
+ * @param chan Returned channel index linked to the peripheral
  *
  * @returns index of the GDMA channel bound to the peripheral, -1 if not found
  */
-int esp32c3_gdma_get_channel_periph(ESP32C3GdmaState *s, GdmaPeripheral periph, int dir);
+bool esp32c3_gdma_get_channel_periph(ESP32C3GdmaState *s, GdmaPeripheral periph, int dir,
+                                     uint32_t* chan);
 
+bool esp32c3_gdma_read_channel(ESP32C3GdmaState *s, uint32_t chan, uint8_t* buffer, uint32_t size);
+bool esp32c3_gdma_write_channel(ESP32C3GdmaState *s, uint32_t chan, uint8_t* buffer, uint32_t size);
 
 REG32(DMA_INT_RAW_CH0, 0x000)
     FIELD(DMA_INT_RAW_CH0, OUTFIFO_UDF_CH0_INT_RAW, 12, 1)

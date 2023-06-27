@@ -16,33 +16,10 @@
 #include "hw/dma/esp32c3_gdma.h"
 #include "hw/qdev-properties.h"
 #include "hw/qdev-properties-system.h"
+#include "qemu/error-report.h"
 
 #define GDMA_WARNING 0
 #define GDMA_DEBUG   0
-
-/**
- * Check the header file for more info about this function
- */
-int esp32c3_gdma_get_channel_periph(ESP32C3GdmaState *s, GdmaPeripheral periph, int dir)
-{
-    /* If the state, the peripheral or the direction is invalid, return directly */
-    if (s == NULL ||
-        periph > GDMA_LAST || periph == GDMA_RSVD1 || periph == GDMA_RSVD4 || periph == GDMA_RSVD5 ||
-        dir < 0 || dir >= ESP32C3_GDMA_CONF_COUNT)
-    {
-        return -1;
-    }
-
-    /* Check all the channels of the GDMA */
-    for (int i = 0; i < ESP32C3_GDMA_CHANNEL_COUNT; i++) {
-        /* IN/OUT PERI registers have the same organization, can use any macro */
-        if (FIELD_EX32(s->ch_conf[i][dir].peripheral, DMA_IN_PERI_SEL_CH0, PERI_IN_SEL_CH0) == periph) {
-            return i;
-        }
-    }
-
-    return -1;
-}
 
 
 /**
@@ -80,9 +57,6 @@ static uint64_t esp32c3_gdma_read(void *opaque, hwaddr addr, unsigned int size)
     ESP32C3GdmaState *s = ESP32C3_GDMA(opaque);
     uint64_t r = 0;
 
-#if GDMA_DEBUG
-    info_report("[GDMA] Reading from %08lx (%08lx)\n", addr, r);
-#endif
 
     switch(addr) {
         case A_DMA_INT_RAW_CH0 ... A_DMA_INT_CLR_CH2:
@@ -119,10 +93,14 @@ static uint64_t esp32c3_gdma_read(void *opaque, hwaddr addr, unsigned int size)
 
         default:
 #if GDMA_WARNING
-            warn_report("[GDMA] Unsupported read to %08lx\n", addr);
+            warn_report("[GDMA] Unsupported read to %08lx", addr);
 #endif
             break;
     }
+
+#if GDMA_DEBUG
+    info_report("[GDMA] Reading from %08lx (%08lx)", addr, r);
+#endif
 
     return r;
 }
@@ -214,25 +192,10 @@ static void esp32c3_gdma_write_int_state(ESP32C3GdmaState *s, uint32_t chan, uin
 static void esp32c3_gdma_reset_fifo(ESP32C3GdmaState *s, uint32_t chan, uint32_t in_out)
 {
 #if GDMA_DEBUG
-    info_report("Resetting FIFO for chan %d, direction: %d\n", chan, in_out);
+    info_report("Resetting FIFO for chan %d, direction: %d", chan, in_out);
 #endif
     /* Set the FIFO empty bit to 1, full bit to 0, and number of bytes of data to 0 */
     s->ch_conf[chan][in_out].status = R_DMA_INFIFO_STATUS_CH0_INFIFO_EMPTY_CH0_MASK;
-}
-
-
-/**
- * @brief Check that the given 32-bit address is in a given range
- *
- * @param range_start Start address of range
- * @param range_size Size of the SoC DRAM
- * @param addr Linked-list node address
- *
- * @returns true if the node is valid (in DRAM), false else
- */
-static inline bool esp32c3_gdma_addr_in_range(uint32_t range_start, uint32_t range_size, uint32_t addr)
-{
-    return range_start <= addr && addr < (range_start + range_size);
 }
 
 
@@ -354,6 +317,275 @@ static void esp32c3_gdma_get_restart_buffer(ESP32C3GdmaState *s, uint32_t chan, 
     const uint32_t guest_addr = dram_upper_bits | FIELD_EX32(state->state, DMA_OUT_STATE_CH0, OUTLINK_DSCR_ADDR_CH0);
 
     *out = guest_addr;
+}
+
+
+/**
+ * Check the header file for more info about this function
+ */
+bool esp32c3_gdma_get_channel_periph(ESP32C3GdmaState *s, GdmaPeripheral periph, int dir, uint32_t* chan)
+{
+    /* If the state, the peripheral or the direction is invalid, return directly */
+    if (s == NULL || chan == NULL ||
+        periph > GDMA_LAST || periph == GDMA_RSVD1 || periph == GDMA_RSVD4 || periph == GDMA_RSVD5 ||
+        dir < 0 || dir >= ESP32C3_GDMA_CONF_COUNT)
+    {
+        return false;
+    }
+
+    /* Check all the channels of the GDMA */
+    for (int i = 0; i < ESP32C3_GDMA_CHANNEL_COUNT; i++) {
+        /* IN/OUT PERI registers have the same organization, can use any macro.
+         * Look for the channel that was configured with the given peripheral. It must be marked as "started" too */
+        if ( FIELD_EX32(s->ch_conf[i][dir].peripheral, DMA_IN_PERI_SEL_CH0, PERI_IN_SEL_CH0) == periph ||
+             FIELD_EX32(s->ch_conf[i][dir].link, DMA_OUT_LINK_CH0, OUTLINK_START_CH0)) {
+
+            *chan = i;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+
+/**
+ * @brief Read data from guest RAM pointed by the linked list configured in the given DmaConfigState index.
+ *        `size` bytes will be read and stored in `buffer`.
+ */
+bool esp32c3_gdma_read_channel(ESP32C3GdmaState *s, uint32_t chan, uint8_t* buffer, uint32_t size)
+{
+    DmaConfigState* state = &s->ch_conf[chan][ESP32C3_GDMA_OUT_IDX];
+
+    state->link &= R_DMA_OUT_LINK_CH0_OUTLINK_ADDR_CH0_MASK;
+
+    /* Same goes for the status */
+    esp32c3_gdma_clear_status(s, chan, R_DMA_INT_RAW_CH0_OUT_DONE_CH0_INT_RAW_MASK |
+                                       R_DMA_INT_RAW_CH0_OUT_EOF_CH0_INT_RAW_MASK);
+
+    /* Get the guest DRAM address */
+    uint32_t out_addr = ((ESP32C3_GDMA_RAM_ADDR >> 20) << 20) | FIELD_EX32(state->link, DMA_OUT_LINK_CH0, OUTLINK_ADDR_CH0);
+
+    /* Boolean to mark whether we need to check the owner for in and out buffers */
+    const bool owner_check_out = FIELD_EX32(state[ESP32C3_GDMA_OUT_IDX].conf1, DMA_OUT_CONF1_CH0, OUT_CHECK_OWNER_CH0);
+
+    /* Boolean to mark whether the transmit (out) buffers must have their owner bit cleared here */
+    const bool clear_out = FIELD_EX32(state[ESP32C3_GDMA_OUT_IDX].conf0, DMA_OUT_CONF0_CH0, OUT_AUTO_WRBACK_CH0);
+
+    /* Pointer to the lists that will be browsed by the loop below */
+    GdmaLinkedList out_list;
+
+    /* Boolean to mark whether a descriptor error occurred during the transfer */
+    bool valid = true;
+
+    /* Set the current buffer (guest address) in the `desc_addr` register */
+    valid = esp32c3_gdma_read_descr(s, out_addr, &out_list);
+    esp32c3_gdma_push_descriptor(s, chan, ESP32C3_GDMA_OUT_IDX, out_addr);
+
+    /* Check that the address is valid. If the owner must be checked, make sure owner is the DMA controller.
+     * On the real hardware, both in and out are checked at the same time, so in case of an error, both bits
+     * are set. Replicate the same behavior here. */
+    if ( !valid || (owner_check_out && !out_list.config.owner) ) {
+        esp32c3_gdma_set_status(s, chan, R_DMA_INT_RAW_CH0_OUT_DSCR_ERR_CH0_INT_RAW_MASK);
+        return false;
+    }
+
+    /* Store the current number of bytes written to `buffer` parameter */
+    uint32_t consumed = 0;
+    bool exit_loop = false;
+    bool error = false;
+
+    while (!exit_loop && !error) {
+        /* Calculate the number of bytes to read from the OUT channel */
+        const uint32_t remaining = size - consumed;
+        const uint32_t min = MIN(out_list.config.length, remaining);
+
+        valid = esp32c3_gdma_read_guest(s, out_list.buf_addr, buffer + consumed, min);
+        if (!valid) {
+            esp32c3_gdma_set_status(s, chan, R_DMA_INT_RAW_CH0_OUT_DSCR_ERR_CH0_INT_RAW_MASK);
+            error = true;
+            break;
+        }
+        consumed += min;
+
+        if (consumed == size) {
+            exit_loop = true;
+        }
+
+        /* If we reached the end of the TX descriptor, we can jump to the next buffer */
+        if (min == out_list.config.length) {
+
+            /* Before jumping to the next node, clear the owner bit if needed */
+            if (clear_out) {
+                out_list.config.owner = 0;
+
+                /* Write back the modified descriptor, should always be valid */
+                valid = esp32c3_gdma_read_descr(s, out_addr, &out_list);
+                assert(valid);
+            }
+
+            const bool eof_bit = out_list.config.suc_eof;
+
+            /* Retrieve the next node  while updating the virtual guest address */
+            out_addr = out_list.next_addr;
+            valid = esp32c3_gdma_next_list_node(s, chan, ESP32C3_GDMA_OUT_IDX, &out_list);
+
+            /* Only check the valid flag and the owner if we don't have to exit the loop*/
+            if ( !exit_loop && (!valid || (owner_check_out && !out_list.config.owner)) ) {
+                esp32c3_gdma_set_status(s, chan, R_DMA_INT_RAW_CH0_OUT_DSCR_ERR_CH0_INT_RAW_MASK);
+                error = true;
+            }
+
+            /* If the EOF bit was set, the real controller doesn't stop the transfer, it simply
+             * sets the status accordingly (and generates an interrupt if enabled) */
+            if (eof_bit) {
+                esp32c3_gdma_set_status(s, chan, R_DMA_INT_RAW_CH0_OUT_EOF_CH0_INT_RAW_MASK |
+                                                 R_DMA_INT_RAW_CH0_OUT_TOTAL_EOF_CH0_INT_RAW_MASK);
+            }
+        }
+    }
+
+    /* Check if all the bytes were sent successfully */
+    if (exit_loop && consumed != size) {
+        /* TODO: which error should be triggered ?*/
+        esp32c3_gdma_set_status(s, chan, R_DMA_INT_RAW_CH0_OUT_DSCR_ERR_CH0_INT_RAW_MASK);
+        error = true;
+    }
+
+    if (!error) {
+        /* Set the transfer as completed. EOF should have already been triggered within the loop */
+        esp32c3_gdma_set_status(s, chan, R_DMA_INT_RAW_CH0_OUT_DONE_CH0_INT_RAW_MASK);
+    }
+
+    return !error;
+}
+
+
+/**
+ * @brief Write data to the guest RAM pointed by the linked list configured in the given DmaConfigState index.
+ *        `size` bytes from `buffer` will be written to guest machine's RAM.
+ */
+bool esp32c3_gdma_write_channel(ESP32C3GdmaState *s, uint32_t chan, uint8_t* buffer, uint32_t size)
+{
+    DmaConfigState* state = &s->ch_conf[chan][ESP32C3_GDMA_IN_IDX];
+
+    /* Clear the (RE)START fields, i.e., only keep the link address */
+    state->link &= R_DMA_OUT_LINK_CH0_OUTLINK_ADDR_CH0_MASK;
+
+    /* Same goes for the status */
+    esp32c3_gdma_clear_status(s, chan, R_DMA_INT_RAW_CH0_IN_DONE_CH0_INT_RAW_MASK  |
+                                       R_DMA_INT_RAW_CH0_IN_SUC_EOF_CH0_INT_RAW_MASK);
+
+    /* Get highest 12 bits of the DRAM address */
+    uint32_t in_addr = ((ESP32C3_GDMA_RAM_ADDR >> 20) << 20) | FIELD_EX32(state->link, DMA_IN_LINK_CH0, INLINK_ADDR_CH0);
+
+    /* Boolean to mark whether we need to check the owner for in buffers */
+    const bool owner_check_in = FIELD_EX32(state->conf1, DMA_IN_CONF1_CH0, IN_CHECK_OWNER_CH0);
+
+    /* Pointer to the lists that will be browsed by the loop below */
+    GdmaLinkedList in_list = { 0 };
+    /* Boolean to mark whether a descriptor error occurred during the transfer */
+    bool valid = true;
+
+    valid = esp32c3_gdma_read_descr(s, in_addr, &in_list);
+    esp32c3_gdma_push_descriptor(s, chan, ESP32C3_GDMA_IN_IDX, in_addr);
+
+    if ( !valid || (owner_check_in && !in_list.config.owner) ) {
+        esp32c3_gdma_set_status(s, chan, R_DMA_INT_RAW_CH0_IN_DSCR_ERR_CH0_INT_RAW_MASK);
+        return false;
+    }
+
+    /* Clear the number of bytes written to the "in" buffer and the owner */
+    in_list.config.length = 0;
+
+    uint32_t consumed = 0;
+    bool exit_loop = false;
+    bool error = false;
+
+    while (!exit_loop && !error) {
+
+        /* Calculate the number of bytes to write to the in channel */
+        const uint32_t remaining = size - consumed;
+        const uint32_t min = MIN(in_list.config.size, remaining);
+
+        /* Perform the actual copy, the in buffer address will always be at the beginning because the data
+         * to write to it are contiguous (`buffer` parameter) */
+        valid = esp32c3_gdma_write_guest(s, in_list.buf_addr, buffer + consumed, min);
+        if (!valid) {
+            esp32c3_gdma_set_status(s, chan, R_DMA_INT_RAW_CH0_IN_DSCR_ERR_CH0_INT_RAW_MASK);
+            error = true;
+        }
+
+        /* Update the number of bytes written to the "in" buffer */
+        in_list.config.length += min;
+        consumed += min;
+
+        if (size == consumed) {
+            exit_loop = true;
+        }
+
+        /* If we reached the end of the "node", go to the next one */
+        if (in_list.config.size == in_list.config.length) {
+            /* Clear the owner bit, set the length to the maximum bytes readable */
+            in_list.config.owner = 0;
+
+            /* During peripheral-to-memory transfers, the eof bit is only used to set a status bit, and generate
+             * an interrupt if enabled. If we still have bytes to send, we won't stop the transfer.
+             * In all cases, reset this bit as it must be only set at the end of the buffer. */
+            if (in_list.config.suc_eof) {
+                in_list.config.suc_eof = 0;
+                esp32c3_gdma_set_status(s, chan, R_DMA_INT_RAW_CH0_IN_SUC_EOF_CH0_INT_RAW_MASK);
+            }
+
+            /* Write back the IN node to guest RAM */
+            valid = esp32c3_gdma_write_descr(s, in_addr, &in_list);
+            assert(valid);
+
+            /* Get the next virtual address before replacing the current list node content */
+            const uint32_t next_addr = in_list.next_addr;
+
+            /* Even if we have to exit the loop, we still have to push the next address to the descriptors stack */
+            if (exit_loop) {
+                esp32c3_gdma_push_descriptor(s, chan, ESP32C3_GDMA_IN_IDX, next_addr);
+                break;
+            }
+
+            /* In the case where the transfer is finished, we should still fetch the next node,
+             * but we should not override the current in_list variable as it is used outside the loop
+             * to reset the owner and update the suc_eof flag */
+            valid = esp32c3_gdma_next_list_node(s, chan, ESP32C3_GDMA_IN_IDX, &in_list);
+
+            if (!valid || (owner_check_in && !in_list.config.owner)) {
+                /* Check the validity of the next node if we have to continue the loop (transfer finished) */
+                esp32c3_gdma_set_status(s, chan, R_DMA_INT_RAW_CH0_IN_DSCR_ERR_CH0_INT_RAW_MASK);
+                error = true;
+            } else {
+                /* Continue the loop normally, next RX descriptor set to current */
+                in_list.config.length = 0;
+
+                /* Update the current in guest address */
+                in_addr = next_addr;
+            }
+        }
+    }
+
+    if (!error) {
+        /* In all cases (error or not), let's set the End-of-list in the receiver */
+        in_list.config.suc_eof = 1;
+        in_list.config.owner = 0;
+
+        valid = esp32c3_gdma_write_descr(s, in_addr, &in_list);
+        assert(valid);
+
+        /* And store the EOF RX descriptor GUEST address in the correct register.
+         * This can be used in the ISR to know which buffer has just been processed. */
+        state->suc_eof_desc_addr = in_addr;
+
+        /* Set the transfer as completed for both the IN and OUT link */
+        esp32c3_gdma_set_status(s, chan, R_DMA_INT_RAW_CH0_IN_DONE_CH0_INT_RAW_MASK);
+    }
+
+    return !error;
 }
 
 
@@ -673,7 +905,7 @@ static void esp32c3_gdma_write(void *opaque, hwaddr addr,
     ESP32C3GdmaState *s = ESP32C3_GDMA(opaque);
 
 #if GDMA_DEBUG
-    info_report("[GDMA] Writing to %08lx (%08lx)\n", addr, value);
+    info_report("[GDMA] Writing to %08lx (%08lx)", addr, value);
 #endif
 
     switch(addr) {
@@ -714,7 +946,7 @@ static void esp32c3_gdma_write(void *opaque, hwaddr addr,
 
         default:
 #if GDMA_WARNING
-            warn_report("[GDMA] Unsupported write to %08lx (%08lx)\n", addr, value);
+            warn_report("[GDMA] Unsupported write to %08lx (%08lx)", addr, value);
 #endif
             break;
     }
