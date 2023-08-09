@@ -17,7 +17,7 @@
 #include "hw/boards.h"
 #include "hw/loader.h"
 #include "hw/sysbus.h"
-#include "hw/i2c/esp32_i2c.h"
+#include "hw/xtensa/esp32_i2c.h"
 #include "hw/xtensa/xtensa_memory.h"
 #include "hw/misc/unimp.h"
 #include "hw/misc/unimp-default.h"
@@ -25,8 +25,8 @@
 #include "hw/i2c/i2c.h"
 #include "hw/qdev-properties.h"
 #include "hw/xtensa/esp32.h"
-#include "hw/misc/ssi_psram.h"
-#include "hw/sd/dwc_sdmmc.h"
+#include "hw/xtensa/ssi_psram.h"
+#include "hw/xtensa/dwc_sdmmc.h"
 #include "core-esp32/core-isa.h"
 #include "qemu/datadir.h"
 #include "sysemu/sysemu.h"
@@ -521,29 +521,30 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
     sysbus_connect_irq(SYS_BUS_DEVICE(&s->sdmmc), 0,
                        qdev_get_gpio_in(intmatrix_dev, ETS_SDIO_HOST_INTR_SOURCE));
 
-    // not mentioned in fork 
+    // unused by socket wifi test firmware
     esp32_soc_add_unimp_default_device(sys_mem, "esp32.pcnt", DR_REG_PCNT_BASE, 0x1000, 0);
-
-    // implemented in fork, still unimplemented here
-    esp32_soc_add_unimp_default_device(sys_mem, "esp32.rtcio", DR_REG_SENS_BASE, 0x400, 0);
     esp32_soc_add_unimp_default_device(sys_mem, "esp32.rmt", DR_REG_RMT_BASE, 0x1000, 0);
 
-    // common
+    // used for wifi
+    esp32_soc_add_unimp_default_device(sys_mem, "esp32.sens", DR_REG_SENS_BASE, 0x400, 0);
     esp32_soc_add_unimp_default_device(sys_mem, "esp32.rtcio", DR_REG_RTCIO_BASE, 0x400, 0);
+    esp32_soc_add_unimp_default_device(sys_mem, "esp32.apbctrl", DR_REG_APB_CTRL_BASE, 0x1000, 0);
+
+    // likely not needed for wifi
     esp32_soc_add_unimp_default_device(sys_mem, "esp32.iomux", DR_REG_IO_MUX_BASE, 0x2000, 0);
     esp32_soc_add_unimp_default_device(sys_mem, "esp32.hinf", DR_REG_HINF_BASE, 0x100, 0);
     esp32_soc_add_unimp_default_device(sys_mem, "esp32.slc", DR_REG_SLC_BASE, 0x1000, 0);
     esp32_soc_add_unimp_default_device(sys_mem, "esp32.slchost", DR_REG_SLCHOST_BASE, 0x1000, 0);
-    esp32_soc_add_unimp_default_device(sys_mem, "esp32.apbctrl", DR_REG_APB_CTRL_BASE, 0x1000, 0);
     esp32_soc_add_unimp_default_device(sys_mem, "esp32.i2s0", DR_REG_I2S_BASE, 0x1000, 0);
     esp32_soc_add_unimp_default_device(sys_mem, "esp32.i2s1", DR_REG_I2S1_BASE, 0x1000, 0);
 
-    // only implemented in fork
+    // used in wifi
     esp32_soc_add_unimp_default_device(sys_mem, "esp32.fe2", DR_REG_FE2_BASE, 0x1000, -1);
     esp32_soc_add_unimp_default_device(sys_mem, "esp32.chipv7_phy", DR_REG_PHY_BASE, 0x1000, -1);
     esp32_soc_add_unimp_default_device(sys_mem, "esp32.chipv7_phyb", DR_REG_WDEV_BASE, 0x1000, 0);
-    esp32_soc_add_unimp_default_device(sys_mem, "esp32.unknown_wifi", DR_REG_NRX_BASE  , 0x1000, -1);
-    esp32_soc_add_unimp_default_device(sys_mem, "esp32.unknown_wifi1", DR_REG_BB_BASE , 0x1000, -1);
+    esp32_soc_add_unimp_default_device(sys_mem, "esp32.wifi-before-nrx", DR_REG_NRX_BASE  - 0xC00 , 0xC00, -1);
+    esp32_soc_add_unimp_default_device(sys_mem, "esp32.nrx", DR_REG_NRX_BASE  , 0x400, -1);
+    esp32_soc_add_unimp_default_device(sys_mem, "esp32.baseband", DR_REG_BB_BASE , 0x1000, -1);
 
     /* Emulation of APB_CTRL_DATE_REG, needed for ECO3 revision detection.
      * This is a small hack to avoid creating a whole new device just to emulate one

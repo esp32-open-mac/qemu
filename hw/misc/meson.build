@@ -125,24 +125,6 @@ softmmu_ss.add(when: 'CONFIG_ASPEED_SOC', if_true: files(
 
 softmmu_ss.add(when: 'CONFIG_MSF2', if_true: files('msf2-sysreg.c'))
 softmmu_ss.add(when: 'CONFIG_NRF51_SOC', if_true: files('nrf51_rng.c'))
-softmmu_ss.add(when: 'CONFIG_XTENSA_ESP32', if_true: files(
-  'esp32_crosscore_int.c',
-  'esp32_dport.c',
-  'esp32_rng.c',
-  'esp32_rtc_cntl.c',
-  'esp32_sha.c',
-  'esp32_aes.c',
-  'esp32_ledc.c',
-  'esp32_flash_enc.c',
-  'esp32_unknown.c',
-  'esp32_ana.c',
-  'esp32_wifi.c',
-  'esp32_wifi_ap.c',
-  'esp32_wlan_packet.c',
-  'esp32_phya.c',
-  'esp32_fe.c',
-  'ssi_psram.c'
-))
 softmmu_ss.add(when: 'CONFIG_RISCV_ESP32C3', if_true: files(
   'esp32c3_cache.c',
   'esp32c3_sha.c',
@@ -151,9 +133,6 @@ softmmu_ss.add(when: 'CONFIG_RISCV_ESP32C3', if_true: files(
 ))
 
 if gcrypt.found()
-  softmmu_ss.add(when: [gcrypt, 'CONFIG_XTENSA_ESP32'], if_true: files(
-    'esp32_rsa.c',
-  ))
   softmmu_ss.add(when: [gcrypt, 'CONFIG_RISCV_ESP32C3'], if_true: files(
     'esp32c3_aes.c',
     'esp32c3_rsa.c'
