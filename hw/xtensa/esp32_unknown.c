@@ -17,21 +17,12 @@ static uint64_t esp32_unknown_read(void *opaque, hwaddr addr, unsigned int size)
     addr += 0x3ff00000;
     uint64_t r = 0;
     switch (addr) {
-        // case (DR_REG_ANA_BASE + 0x04c): { // used in ram_txdc_cal_v70, esp32.analog region
-        //     r = 0x1000000;
-        //     break;
-        // }
-        // case 0x3ff4607c: { // used in ram_iq_est_enable, reserved region
-        //     r = 0xffffffff;
-        //     break;
-        // }
-
         default: {
-            printf("WARNING: unimplemented device read for %016lX\n", addr);
+            printf("ERROR: unmapped peripheral read for %08x\n", (uint32_t) addr);
+            exit(1);
             break;
         }
     }
-    // Esp32UnknownState *s = ESP32_UNKNOWN(opaque);
     return r;
 }
 
@@ -39,9 +30,8 @@ static void esp32_unknown_write(void *opaque, hwaddr addr,
                        uint64_t value, unsigned int size)
 {
     addr += 0x3ff00000;
-    // Esp32UnknownState *s = ESP32_UNKNOWN(opaque);
-    printf("WARNING: unimplemented device write for %016lX, setting to %ld (size=%d)\n", addr, value, size);
-    
+    printf("ERROR: unmapped peripheral write for %08x, setting to %08x (size=%d)\n", (uint32_t) addr, (uint32_t) value, size);
+    exit(1);
 }
 
 static const MemoryRegionOps esp32_unknown_ops = {

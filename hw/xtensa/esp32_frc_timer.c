@@ -22,6 +22,9 @@
 #include "hw/xtensa/esp32_frc_timer.h"
 #include "hw/timer/trace.h"
 
+#include "xtensa_trace_mmio.h"
+#include "hw/xtensa/esp32_reg.h"
+
 static uint64_t esp32_frc_timer_get_count(Esp32FrcTimerState *s, uint64_t ns_now)
 {
     if (!s->enable) {
@@ -116,6 +119,8 @@ static uint64_t esp32_frc_timer_read(void *opaque, hwaddr addr, unsigned int siz
     }
     case A_FRC_TIMER_INT_CLR:
     default:
+        qemu_log_mask(LOG_UNIMP, "frc_timer: unimplemented device read %08x\n", (uint32_t) addr + DR_REG_FRC_TIMER_BASE);
+        log_mmio_access(addr + DR_REG_FRC_TIMER_BASE, r, false);
         break;
     }
     trace_esp32_frc_timer_read(addr, r);
@@ -162,6 +167,10 @@ static void esp32_frc_timer_write(void *opaque, hwaddr addr,
         s->alarm_reg = value;
         esp32_frc_timer_update_alarm(s, s->alarm_reg, count_now, ns_now);
         break;
+    }
+    default: {
+        qemu_log_mask(LOG_UNIMP, "frc_timer: unimplemented device write %08x = %08x\n", (uint32_t) addr + DR_REG_FRC_TIMER_BASE, (uint32_t) value);
+        log_mmio_access(addr + DR_REG_FRC_TIMER_BASE, value, true);
     }
     }
 }

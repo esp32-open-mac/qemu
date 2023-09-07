@@ -7,6 +7,9 @@
 #include "hw/sysbus.h"
 #include "hw/xtensa/esp32_phya.h"
 
+#include "xtensa_trace_mmio.h"
+#include "hw/xtensa/esp32_reg.h"
+
 static uint64_t esp32_phya_read(void *opaque, hwaddr addr, unsigned int size)
 {
     uint32_t r = 0;
@@ -32,8 +35,10 @@ static uint64_t esp32_phya_read(void *opaque, hwaddr addr, unsigned int size)
             qemu_log_mask(LOG_UNIMP, "phya PHYA_TXQ_PMD read %lX\n", addr);
             break;
         default:
+            qemu_log_mask(LOG_UNIMP, "phya: unimplemented device read %08x\n", (uint32_t) addr + DR_REG_PHYA_BASE);
             break;
     }
+    log_mmio_access(addr + DR_REG_PHYA_BASE, r, false);
     return r;
 }
 
@@ -41,6 +46,7 @@ static void esp32_phya_write(void *opaque, hwaddr addr, uint64_t value,
                                  unsigned int size) {
     Esp32PhyaState *s = ESP32_PHYA(opaque);
     s->mem[addr/4]=(uint32_t)value;
+    log_mmio_access(addr + DR_REG_PHYA_BASE, (uint32_t) value, true);
     switch (addr) {
         case A_PHYA_TX_PLCP1_0:
             qemu_log_mask(LOG_UNIMP, "phya PHYA_TX_PLCP1_0 write %lx=%lx\n", addr, value);
@@ -60,7 +66,8 @@ static void esp32_phya_write(void *opaque, hwaddr addr, uint64_t value,
         case A_PHYA_TXQ_PMD:
             qemu_log_mask(LOG_UNIMP, "phya PHYA_TXQ_PMD write %lx=%lx\n", addr, value);
             break;
-        default: 
+        default:
+            qemu_log_mask(LOG_UNIMP, "phya: unimplemented device write %08x = %08x\n", (uint32_t) addr + DR_REG_PHYA_BASE, (uint32_t) value);
             break;
     }
     

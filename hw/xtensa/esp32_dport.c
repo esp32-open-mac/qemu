@@ -125,6 +125,7 @@ static uint64_t esp32_dport_read(void *opaque, hwaddr addr, unsigned int size)
         r = s->slave_spi_config_reg;
         break;
     default:
+        qemu_log_mask(LOG_UNIMP, "dport: unimplemented device read %08x\n", (uint32_t) addr + DR_REG_DPORT_BASE);
         log_mmio_access(addr + DR_REG_DPORT_BASE, r, false);
     }
 
@@ -231,6 +232,7 @@ static void esp32_dport_write(void *opaque, hwaddr addr,
         qemu_set_irq(s->flash_dec_en_gpio, FIELD_EX32(value, DPORT_SLAVE_SPI_CONFIG, SLAVE_SPI_DECRYPT_ENABLE));
         break;
     default:
+        qemu_log_mask(LOG_UNIMP, "dport: unimplemented device write %08x = %08x\n", (uint32_t) addr + DR_REG_DPORT_BASE, (uint32_t) value);
         log_mmio_access(addr + DR_REG_DPORT_BASE, value, true);
     }
 }

@@ -35,15 +35,17 @@ void log_mmio_access(uint32_t address, uint32_t value, bool access_is_write) {
     }
     // Logs the address, value read or written and stacktrace to a file
     if (!functiontrace_fd) {
-        functiontrace_fd = fopen("/tmp/qemu_mmio_log.txt", "wb");
+        // This file is in /tmp, since it needs to log quickly
+        // We never fclose the file, but it's fine; in C, the exit function is guaranteed
+        //  to fclose all opened files (it even flushes the unwritten buffered data, if any )
+        functiontrace_fd = fopen("/tmp/qemu_mmio_execution_trace.txt", "wb");
         if (!functiontrace_fd) {
+            printf("Could not open mmio trace file\n");
             exit(23);
         }
         fprintf(functiontrace_fd, "mode address value stacktrace[...]");
     }
     fprintf(functiontrace_fd, "\n%c %08x %08x", "RW"[access_is_write], address, value);
-
-    
 
     XtensaCPU *cpu = XTENSA_CPU(cs);
     int depth = 255;

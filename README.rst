@@ -1,3 +1,32 @@
+This version of QEMU is modified to reverse engineer the ESP32 wifi registers.
+Was built on the latest espressif qemu release, with the patches from Ebiroll ported to that newer version
+
+========
+Features
+========
+
+- Implements registers enough to get AP mode working (QEMU is the access point, the emulated ESP32 is a client); the client can connect to the AP, obtain an IP address, ...
+- Can log all unknown peripheral accesses to a log-file. Because we have to unwind the stack ourselves, this feature only works in single-step mode. The log file contains:
+  - mode (read or write)
+  - address
+  - value read or written
+  - the callstack
+
+============
+Instructions
+============
+
+After compiling with `ninja -C build`, run it with
+
+```
+build/qemu-system-xtensa -singlestep -d unimp -nic user,model=misc.esp32_wifi,id=u1 -no-reboot -S -s -nographic -machine esp32 -drive file=/home/user/Projects/esp32-open-mac/tx-example-esp32-plain/build/flash_image.bin,if=mtd,format=raw -object filter-dump,id=f1,file=/tmp/dump.pcap,netdev=u1 -drive file=../efuse/efuse.bin,if=none,format=raw,id=efuse -global driver=nvram.esp32.efuse,property=drive,value=efuse 2>&1
+```
+
+- `-singlestep`, so we can trace all peripheral writes/reads and get the callstack (this is written to a file in /tmp)
+- `-d unimp`, so we log unimplemented memory peripherals
+
+You will need to extract efuse.bin yourself, by dumping it from a real ESP32 (can be done with esptool.py, then concatenating the different files into efuse.bin)
+
 ===========
 QEMU README
 ===========

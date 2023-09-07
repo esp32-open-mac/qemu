@@ -19,6 +19,8 @@
 #include "hw/qdev-properties.h"
 #include "hw/xtensa/esp32_gpio.h"
 
+#include "xtensa_trace_mmio.h"
+#include "hw/xtensa/esp32_reg.h"
 
 
 static uint64_t esp32_gpio_read(void *opaque, hwaddr addr, unsigned int size)
@@ -31,6 +33,8 @@ static uint64_t esp32_gpio_read(void *opaque, hwaddr addr, unsigned int size)
         break;
 
     default:
+        qemu_log_mask(LOG_UNIMP, "gpio: unimplemented device read %08x\n", (uint32_t) addr + DR_REG_GPIO_BASE);
+        log_mmio_access(addr + DR_REG_GPIO_BASE, r, false);
         break;
     }
     return r;
@@ -39,6 +43,8 @@ static uint64_t esp32_gpio_read(void *opaque, hwaddr addr, unsigned int size)
 static void esp32_gpio_write(void *opaque, hwaddr addr,
                        uint64_t value, unsigned int size)
 {
+    qemu_log_mask(LOG_UNIMP, "gpio: unimplemented device write %08x = %08x\n", (uint32_t) addr + DR_REG_GPIO_BASE, (uint32_t) value);
+    log_mmio_access(addr + DR_REG_GPIO_BASE, value, false);
 }
 
 static const MemoryRegionOps uart_ops = {

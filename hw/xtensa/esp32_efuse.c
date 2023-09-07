@@ -95,6 +95,7 @@ static uint64_t esp32_efuse_read(void *opaque, hwaddr addr, unsigned int size)
         r = 0x16042600;
         break;
     default:
+        qemu_log_mask(LOG_UNIMP, "efuse: unimplemented device read %08x\n", (uint32_t) addr + DR_REG_EFUSE_BASE);
         log_mmio_access(addr + DR_REG_EFUSE_BASE, r, false);
     }
     return r;
@@ -143,6 +144,7 @@ static void esp32_efuse_write(void *opaque, hwaddr addr,
         s->efuse_wr.blk3[(addr - A_EFUSE_BLK3_WDATA0) / 4] = value;
         break;
     default:
+        qemu_log_mask(LOG_UNIMP, "efuse: unimplemented device write %08x = %08x\n", (uint32_t) addr + DR_REG_EFUSE_BASE, (uint32_t) value);
         log_mmio_access(addr + DR_REG_EFUSE_BASE, value, true);
     }
 }

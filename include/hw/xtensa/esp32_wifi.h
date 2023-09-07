@@ -13,7 +13,7 @@
 typedef struct dma_list_item {
     unsigned size:12;
     unsigned length:12;
-    unsigned :6;
+    unsigned unknown:6;
     unsigned eof:1;
     unsigned owner:1;
     uint32_t address;

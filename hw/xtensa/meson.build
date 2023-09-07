@@ -45,6 +45,7 @@ xtensa_ss.add(when: 'CONFIG_XTENSA_ESP32', if_true: files('esp32_gpio.c'))
 
 xtensa_ss.add(when: 'CONFIG_XTENSA_ESP32', if_true: files('esp32_uart.c'))
 
+xtensa_ss.add(when: 'CONFIG_UNIMP', if_true: files('unimp-default.c'))
 
 if gcrypt.found()
   xtensa_ss.add(when: [gcrypt, 'CONFIG_XTENSA_ESP32'], if_true: files(

@@ -25,6 +25,7 @@ struct UnimplementedDefaultDeviceState {
     char *name;
     uint64_t size;
     uint64_t default_value;
+    uint64_t base_address;
 };
 
 /**
@@ -50,6 +51,7 @@ static inline void create_unimplemented_default_device(const char *name,
     qdev_prop_set_string(dev, "name", name);
     qdev_prop_set_uint64(dev, "size", size);
     qdev_prop_set_uint64(dev, "default_value", default_value);
+    qdev_prop_set_uint64(dev, "base_address", base);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 
     sysbus_mmio_map_overlap(SYS_BUS_DEVICE(dev), 0, base, -1000);

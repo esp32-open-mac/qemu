@@ -20,7 +20,7 @@
 #include "hw/xtensa/esp32_i2c.h"
 #include "hw/xtensa/xtensa_memory.h"
 #include "hw/misc/unimp.h"
-#include "hw/misc/unimp-default.h"
+#include "hw/xtensa/unimp-default.h"
 #include "hw/irq.h"
 #include "hw/i2c/i2c.h"
 #include "hw/qdev-properties.h"
@@ -521,30 +521,33 @@ static void esp32_soc_realize(DeviceState *dev, Error **errp)
     sysbus_connect_irq(SYS_BUS_DEVICE(&s->sdmmc), 0,
                        qdev_get_gpio_in(intmatrix_dev, ETS_SDIO_HOST_INTR_SOURCE));
 
-    // unused by socket wifi test firmware
-    esp32_soc_add_unimp_default_device(sys_mem, "esp32.pcnt", DR_REG_PCNT_BASE, 0x1000, 0);
-    esp32_soc_add_unimp_default_device(sys_mem, "esp32.rmt", DR_REG_RMT_BASE, 0x1000, 0);
-
-    // used for wifi
-    esp32_soc_add_unimp_default_device(sys_mem, "esp32.sens", DR_REG_SENS_BASE, 0x400, 0);
-    esp32_soc_add_unimp_default_device(sys_mem, "esp32.rtcio", DR_REG_RTCIO_BASE, 0x400, 0);
-    esp32_soc_add_unimp_default_device(sys_mem, "esp32.apbctrl", DR_REG_APB_CTRL_BASE, 0x1000, 0);
-
-    // likely not needed for wifi
+// likely not needed for wifi
+    // used to route GPIO signals
     esp32_soc_add_unimp_default_device(sys_mem, "esp32.iomux", DR_REG_IO_MUX_BASE, 0x2000, 0);
-    esp32_soc_add_unimp_default_device(sys_mem, "esp32.hinf", DR_REG_HINF_BASE, 0x100, 0);
+
+    // SLC, don't know what the abbreviation is for, but it has something to do with
+    // the SDIO Slave Controller (see the ESP32 technical reference manual)
     esp32_soc_add_unimp_default_device(sys_mem, "esp32.slc", DR_REG_SLC_BASE, 0x1000, 0);
     esp32_soc_add_unimp_default_device(sys_mem, "esp32.slchost", DR_REG_SLCHOST_BASE, 0x1000, 0);
+    esp32_soc_add_unimp_default_device(sys_mem, "esp32.hinf", DR_REG_HINF_BASE, 0x100, 0);
+
+    // Inter-IC Sound
     esp32_soc_add_unimp_default_device(sys_mem, "esp32.i2s0", DR_REG_I2S_BASE, 0x1000, 0);
     esp32_soc_add_unimp_default_device(sys_mem, "esp32.i2s1", DR_REG_I2S1_BASE, 0x1000, 0);
 
-    // used in wifi
+    esp32_soc_add_unimp_default_device(sys_mem, "esp32.pcnt", DR_REG_PCNT_BASE, 0x1000, 0);
+    esp32_soc_add_unimp_default_device(sys_mem, "esp32.rmt", DR_REG_RMT_BASE, 0x1000, 0);
+
+// used in wifi
     esp32_soc_add_unimp_default_device(sys_mem, "esp32.fe2", DR_REG_FE2_BASE, 0x1000, -1);
     esp32_soc_add_unimp_default_device(sys_mem, "esp32.chipv7_phy", DR_REG_PHY_BASE, 0x1000, -1);
-    esp32_soc_add_unimp_default_device(sys_mem, "esp32.chipv7_phyb", DR_REG_WDEV_BASE, 0x1000, 0);
+    esp32_soc_add_unimp_default_device(sys_mem, "esp32.chipv7_wdev", DR_REG_WDEV_BASE, 0x1000, 0);
     esp32_soc_add_unimp_default_device(sys_mem, "esp32.wifi-before-nrx", DR_REG_NRX_BASE  - 0xC00 , 0xC00, -1);
     esp32_soc_add_unimp_default_device(sys_mem, "esp32.nrx", DR_REG_NRX_BASE  , 0x400, -1);
     esp32_soc_add_unimp_default_device(sys_mem, "esp32.baseband", DR_REG_BB_BASE , 0x1000, -1);
+    esp32_soc_add_unimp_default_device(sys_mem, "esp32.sens", DR_REG_SENS_BASE, 0x400, 0);
+    esp32_soc_add_unimp_default_device(sys_mem, "esp32.rtcio", DR_REG_RTCIO_BASE, 0x400, 0);
+    esp32_soc_add_unimp_default_device(sys_mem, "esp32.apbctrl", DR_REG_APB_CTRL_BASE, 0x1000, 0);
 
     /* Emulation of APB_CTRL_DATE_REG, needed for ECO3 revision detection.
      * This is a small hack to avoid creating a whole new device just to emulate one

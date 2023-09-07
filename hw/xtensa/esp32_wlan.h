@@ -1,3 +1,4 @@
+#pragma once
 /**
  * QEMU WLAN device emulation
  *
@@ -27,9 +28,6 @@
  *  18/1/22 Martin Johnson : Modified for esp32 wifi emulation
  *
  */
-
-#ifndef esp32_wlan_h
-#define esp32_wlan_h 1
 
 
 #define DEBUG_Esp32_WLAN
@@ -222,5 +220,3 @@ typedef struct dhcp_request_t {
     udp_header_t udpheader;
     dhcp_t dhcp;
 } dhcp_request_t;
-
-#endif // esp32_wlan_h

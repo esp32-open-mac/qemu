@@ -5,6 +5,9 @@
 #include "hw/xtensa/esp32_i2c.h"
 #include "hw/irq.h"
 
+#include "xtensa_trace_mmio.h"
+#include "hw/xtensa/esp32_reg.h"
+
 static void esp32_i2c_do_transaction(Esp32I2CState * s);
 static void esp32_i2c_update_irq(Esp32I2CState * s);
 
@@ -92,6 +95,8 @@ static uint64_t esp32_i2c_read(void * opaque, hwaddr addr, unsigned int size)
     case A_I2C_STOP_SETUP:
         return s->stop_setup_reg;
     default:
+        qemu_log_mask(LOG_UNIMP, "i2c: unimplemented device read %08x\n", (uint32_t) addr + DR_REG_I2C_EXT_BASE);
+        log_mmio_access(addr + DR_REG_I2C_EXT_BASE, 0, false);
         return 0;
     }
 }
@@ -168,7 +173,8 @@ static void esp32_i2c_write(void * opaque, hwaddr addr, uint64_t value, unsigned
         s->stop_setup_reg = value;
         break;
     default:
-        break;
+        qemu_log_mask(LOG_UNIMP, "i2c: unimplemented device write %08x = %08x\n", (uint32_t) addr + DR_REG_I2C_EXT_BASE, (uint32_t) value);
+        log_mmio_access(addr + DR_REG_I2C_EXT_BASE, value, true);
     }
 }
 

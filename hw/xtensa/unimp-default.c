@@ -14,10 +14,13 @@
 
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
-#include "hw/misc/unimp-default.h"
+#include "hw/xtensa/unimp-default.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "qapi/error.h"
+
+#include "xtensa_trace_mmio.h"
+
 
 static uint64_t unimp_default_read(void *opaque, hwaddr offset, unsigned size)
 {
@@ -26,6 +29,7 @@ static uint64_t unimp_default_read(void *opaque, hwaddr offset, unsigned size)
     qemu_log_mask(LOG_UNIMP, "%s: unimplemented default device read  "
                   "(size %d, offset 0x%0*" HWADDR_PRIx ")\n",
                   s->name, size, s->offset_fmt_width, offset);
+    log_mmio_access(s->base_address + offset, s->default_value, false);
     return s->default_value;
 }
 
@@ -38,6 +42,7 @@ static void unimp_default_write(void *opaque, hwaddr offset,
                   "(size %d, offset 0x%0*" HWADDR_PRIx
                   ", value 0x%0*" PRIx64 ")\n",
                   s->name, size, s->offset_fmt_width, offset, size << 1, value);
+    log_mmio_access(s->base_address + offset, value, true);
 }
 
 static const MemoryRegionOps unimp_default_ops = {
@@ -75,6 +80,7 @@ static Property unimp_default_properties[] = {
     DEFINE_PROP_UINT64("size", UnimplementedDefaultDeviceState, size, 0),
     DEFINE_PROP_STRING("name", UnimplementedDefaultDeviceState, name),
     DEFINE_PROP_UINT64("default_value", UnimplementedDefaultDeviceState, default_value, 0),
+    DEFINE_PROP_UINT64("base_address", UnimplementedDefaultDeviceState, base_address, 0),
     DEFINE_PROP_END_OF_LIST(),
 };
 
