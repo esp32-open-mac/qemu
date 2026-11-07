@@ -244,7 +244,10 @@ static void send_single_frame(Esp32WifiState *s, struct mac80211_frame *frame, s
 
     if(frame) {
         memcpy(reply->receiver_address, frame->transmitter_address, 6);
-        memcpy(reply->transmitter_address, s->macaddr, 6);
+        /* The reply must come from the AP's BSSID, not from QEMU's own NIC
+         * address: a station that validates BSSID consistency sees two
+         * different APs for one SSID and drops the scan result. */
+        memcpy(reply->transmitter_address, s->ap_macaddr, 6);
         memcpy(reply->address_3, frame->transmitter_address, 6);
     }
 
