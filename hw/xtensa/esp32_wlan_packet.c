@@ -214,7 +214,6 @@ mac80211_frame *Esp32_WLAN_create_authentication_response(access_point_info *ap)
      *  - Status code (successful 0x0)
      */
     add_data(frame,6,(uint8_t []){0,0,2,0,0,0});
-    add_ssid(frame,ap->ssid);
     return frame;
 }
 

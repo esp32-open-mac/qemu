@@ -20,10 +20,15 @@ Building:
 ```
 mkdir build
 cd build
-../configure --target-list=xtensa-softmmu --enable-gcrypt --enable-debug --disable-sanitizers --disable-strip --disable-user --disable-capstone --disable-vnc --disable-sdl --disable-gtk --disable-curl
+../configure --target-list=xtensa-softmmu --enable-gcrypt --enable-slirp --enable-debug --disable-sanitizers --disable-strip --disable-user --disable-capstone --disable-vnc --disable-sdl --disable-gtk --disable-curl
 cd ..
 ninja -C build
 ```
+
+``--enable-slirp`` is required: the emulated AP forwards data frames to QEMU's
+network stack, and without slirp a station that associates never receives a
+DHCP lease (it retries for ~27 s and then disassociates). Install
+``libslirp-devel`` (or your distribution's equivalent) before configuring.
 
 After compiling with `ninja -C build`, build a `flash_image.bin` by `cd'ing` to the build directory of your ESP32 project, then running `esptool.py --chip esp32 merge_bin --fill-flash-size 4MB -o flash_image.bin @flash_args`
 
