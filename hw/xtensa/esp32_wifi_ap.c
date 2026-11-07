@@ -51,10 +51,23 @@ access_point_info access_points[]={
 
 int nb_aps=sizeof(access_points)/sizeof(access_point_info);
 
+static struct mac80211_frame *g_pending_eapol;
+static uint8_t g_anonce[32];
+static char g_ssid[33];
+static uint64_t g_anonce_replay;
+
 static void Esp32_WLAN_beacon_timer(void *opaque)
 {
     struct mac80211_frame *frame;
     Esp32WifiState *s = (Esp32WifiState *)opaque;
+
+    /* Deliver a queued EAPOL msg1 one tick after the association response:
+     * sending it immediately races the supplicant, which starts its handshake
+     * timer only after processing that response. */
+    if (g_pending_eapol) {
+        Esp32_WLAN_insert_frame(s, g_pending_eapol);
+        g_pending_eapol = NULL;
+    }
 
     // only send a beacon if we are an access point
     if(s->ap_state!=Esp32_WLAN__STATE_STA_ASSOCIATED) {
@@ -244,10 +257,7 @@ static void send_single_frame(Esp32WifiState *s, struct mac80211_frame *frame, s
 
     if(frame) {
         memcpy(reply->receiver_address, frame->transmitter_address, 6);
-        /* The reply must come from the AP's BSSID, not from QEMU's own NIC
-         * address: a station that validates BSSID consistency sees two
-         * different APs for one SSID and drops the scan result. */
-        memcpy(reply->transmitter_address, s->ap_macaddr, 6);
+        memcpy(reply->transmitter_address, s->ap_macaddr, 6);  /* BSSID, not QEMU's NIC */
         memcpy(reply->address_3, frame->transmitter_address, 6);
     }
 
@@ -256,6 +266,7 @@ static void send_single_frame(Esp32WifiState *s, struct mac80211_frame *frame, s
 void Esp32_WLAN_handle_frame(Esp32WifiState *s, struct mac80211_frame *frame)
 {
     struct mac80211_frame *reply = NULL;
+    int send_eapol_msg1 = 0;
     static access_point_info dummy_ap={0};
     char ssid[64];
     unsigned long ethernet_frame_size;
@@ -340,11 +351,30 @@ void Esp32_WLAN_handle_frame(Esp32WifiState *s, struct mac80211_frame *frame)
                 case IEEE80211_TYPE_MGT_SUBTYPE_ASSOCIATION_REQ:
                     DEBUG_PRINT_AP(("QEMU: Received association request!\n"));
                     reply = Esp32_WLAN_create_association_response(ap_info);
+                    strncpy(g_ssid, ap_info->ssid, sizeof(g_ssid) - 1);
+                    send_eapol_msg1 = 1;
                     if (s->ap_state == Esp32_WLAN__STATE_AUTHENTICATED) {
                         s->ap_state = Esp32_WLAN__STATE_ASSOCIATED;
                         memcpy(s->associated_ap_macaddr,s->ap_macaddr,6);
                     }
                     break;
+            }
+            if (send_eapol_msg1) {
+                uint8_t anonce[32];
+                for (int i = 0; i < 32; i++) anonce[i] = (uint8_t)rand();
+                /* The supplicant drops an EAPOL-Key whose replay counter did
+                 * not increase, so every msg1 needs a fresh value. */
+                static uint64_t g_eapol_replay;
+                mac80211_frame *m1 = Esp32_WLAN_create_eapol_msg1(
+                    frame->transmitter_address, anonce, ++g_eapol_replay);
+                memcpy(m1->receiver_address, frame->transmitter_address, 6);
+                memcpy(m1->transmitter_address, s->ap_macaddr, 6);
+                memcpy(m1->address_3, s->ap_macaddr, 6);
+                m1->signal_strength = -10;
+                Esp32_WLAN_init_ap_frame(s, m1);
+                memcpy(g_anonce, anonce, 32);
+                g_anonce_replay = g_eapol_replay;
+                g_pending_eapol = m1;
             }
             if (reply) {
                 reply->signal_strength=ap_info->sigstrength;
@@ -360,12 +390,34 @@ void Esp32_WLAN_handle_frame(Esp32WifiState *s, struct mac80211_frame *frame)
         (frame->frame_control.sub_type == IEEE80211_TYPE_DATA_SUBTYPE_DATA)) {
         /* Minimal DHCP server. data_and_fcs starts at the LLC header, so the
          * DHCP payload is at 36 and option 53 (message type) at 36 + 240. */
+        /* EAPOL-Key msg2 from the supplicant: LLC/SNAP ethertype 0x888e at
+         * data_and_fcs[6..7], EAPOL body at +8. Derive the PTK and answer with
+         * msg3 so the 4-way handshake completes. */
+        if (frame->frame_length > 8 + 95 &&
+            frame->data_and_fcs[6] == 0x88 && frame->data_and_fcs[7] == 0x8e) {
+            const uint8_t *b = frame->data_and_fcs + 8;
+            uint16_t ki = (uint16_t)((b[5] << 8) | b[6]);      /* BE */
+            if (b[1] == 0x03 && (ki & 0x0100) && !(ki & 0x0080)) {   /* msg2: MIC, no ACK */
+                uint8_t ptk[48];
+                uint64_t replay = 0;
+                for (int i = 0; i < 8; i++) replay = (replay << 8) | b[9 + i];
+                Esp32_WLAN_wpa_derive(g_ssid, s->ap_macaddr, frame->transmitter_address,
+                                      g_anonce, b + 17, ptk);
+                mac80211_frame *m3 = Esp32_WLAN_create_eapol_msg3(g_anonce, replay, ptk);
+                memcpy(m3->receiver_address, frame->transmitter_address, 6);
+                memcpy(m3->transmitter_address, s->ap_macaddr, 6);
+                memcpy(m3->address_3, s->ap_macaddr, 6);
+                m3->signal_strength = -10;
+                Esp32_WLAN_init_ap_frame(s, m3);
+                Esp32_WLAN_insert_frame(s, m3);
+            }
+        }
         if (frame->frame_length > 278 &&
             frame->data_and_fcs[276] == 53 && frame->data_and_fcs[277] == 1) {
             uint8_t mt = frame->data_and_fcs[278];
             if (mt == 1 || mt == 3) {          /* DISCOVER -> OFFER, REQUEST -> ACK */
                 uint32_t xid;
-                memcpy(&xid, &frame->data_and_fcs[40], 4);
+                memcpy(&xid, &frame->data_and_fcs[36 + 4], 4);
                 uint8_t eth[1600];
                 int n = Esp32_WLAN_build_dhcp_reply(eth, frame->transmitter_address,
                                                     xid, mt == 1 ? 2 : 5);
