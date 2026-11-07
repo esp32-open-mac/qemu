@@ -498,11 +498,13 @@ static void esp32_wifi_realize(DeviceState *dev, Error **errp)
     sysbus_init_mmio(sbd, &s->iomem);
     sysbus_init_irq(sbd, &s->irq);
     memset(s->mem,0,sizeof(s->mem));
+    Esp32_WLAN_set_passphrase(s->wpa_passphrase);
     Esp32_WLAN_setup_ap(dev, s);
 
 }
 static Property esp32_wifi_properties[] = {
     DEFINE_NIC_PROPERTIES(Esp32WifiState, conf),
+    DEFINE_PROP_STRING("wpa-passphrase", Esp32WifiState, wpa_passphrase),
     DEFINE_PROP_END_OF_LIST(),
 };
 static void esp32_wifi_class_init(ObjectClass *klass, void *data)
