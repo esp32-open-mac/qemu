@@ -355,6 +355,20 @@ void Esp32_WLAN_handle_frame(Esp32WifiState *s, struct mac80211_frame *frame)
     }
     if ((frame->frame_control.type == IEEE80211_TYPE_DATA) &&
         (frame->frame_control.sub_type == IEEE80211_TYPE_DATA_SUBTYPE_DATA)) {
+        /* Minimal DHCP server. data_and_fcs starts at the LLC header, so the
+         * DHCP payload is at 36 and option 53 (message type) at 36 + 240. */
+        if (frame->frame_length > 278 &&
+            frame->data_and_fcs[276] == 53 && frame->data_and_fcs[277] == 1) {
+            uint8_t mt = frame->data_and_fcs[278];
+            if (mt == 1 || mt == 3) {          /* DISCOVER -> OFFER, REQUEST -> ACK */
+                uint32_t xid;
+                memcpy(&xid, &frame->data_and_fcs[40], 4);
+                uint8_t eth[1600];
+                int n = Esp32_WLAN_build_dhcp_reply(eth, frame->transmitter_address,
+                                                    xid, mt == 1 ? 2 : 5);
+                Esp32_WLAN_receive(qemu_get_queue(s->nic), eth, n);
+            }
+        }
         if(s->ap_state == Esp32_WLAN__STATE_STA_DHCP) {
             printf("QEMU: STA DHCP not implemented yet\n");
             dhcp_request_t *req=(dhcp_request_t *)&frame->data_and_fcs[8];

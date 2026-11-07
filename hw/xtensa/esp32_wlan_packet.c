@@ -143,6 +143,67 @@ static mac80211_frame *Esp32_WLAN_create_dhcp_frame(int cmd_size, uint8_t dhcp_c
     return frame;
 }
 
+
+/* Minimal DHCP server: hands out a lease without requiring slirp, so the AP is
+ * usable with any netdev backend.
+ *
+ * msgtype: 2 = OFFER, 5 = ACK.
+ */
+int Esp32_WLAN_build_dhcp_reply(uint8_t *eth, const uint8_t *client_mac,
+                                uint32_t xid, uint8_t msgtype) {
+    static const uint8_t server_mac[6] = {0x52, 0x55, 0x0a, 0x00, 0x02, 0x02};
+
+    memcpy(eth, BROADCAST, 6);
+    memcpy(eth + 6, server_mac, 6);
+    eth[12] = 0x08; eth[13] = 0x00;
+
+    uint8_t options[] = {
+        53, 1, 0,                 /* message type, filled below */
+        54, 4, 10, 0, 2, 2,       /* server identifier */
+        51, 4, 0, 0, 0x0e, 0x10,  /* lease time: 3600 s */
+        1, 4, 255, 255, 255, 0,   /* subnet mask */
+        3, 4, 10, 0, 2, 2,        /* router */
+        6, 4, 10, 0, 2, 3,        /* dns */
+        255
+    };
+    options[2] = msgtype;
+
+    dhcp_request_t req;
+    memset(&req, 0, sizeof(req));
+    req.ipheader.version_size = 0x45;
+    req.ipheader.ttl = 64;
+    req.ipheader.protocol = 0x11;
+    req.ipheader.source_ip[0] = 10; req.ipheader.source_ip[1] = 0;
+    req.ipheader.source_ip[2] = 2;  req.ipheader.source_ip[3] = 2;
+    req.ipheader.dest_ip[0] = 255; req.ipheader.dest_ip[1] = 255;
+    req.ipheader.dest_ip[2] = 255; req.ipheader.dest_ip[3] = 255;
+
+    req.udpheader.src_port_h = 0; req.udpheader.src_port_l = 0x43;    /* 67 */
+    req.udpheader.dest_port_h = 0; req.udpheader.dest_port_l = 0x44;  /* 68 */
+
+    req.dhcp.opcode = 2;             /* BOOTREPLY */
+    req.dhcp.htype = 1;
+    req.dhcp.hlen = 6;
+    req.dhcp.xid = xid;
+    memcpy(req.dhcp.chaddr, client_mac, 6);
+    req.dhcp.yiaddr[0] = 10; req.dhcp.yiaddr[1] = 0;
+    req.dhcp.yiaddr[2] = 2;  req.dhcp.yiaddr[3] = 15;
+    req.dhcp.siaddr[0] = 10; req.dhcp.siaddr[1] = 0;
+    req.dhcp.siaddr[2] = 2;  req.dhcp.siaddr[3] = 2;
+    req.dhcp.magic_cookie = 0x63538263;
+
+    /* UDP length covers the UDP header; IP length covers both headers. */
+    int udp_len = sizeof(udp_header_t) + sizeof(dhcp_t) + sizeof(options);
+    int ip_len = sizeof(ip_header_t) + udp_len;
+    req.ipheader.len_h = ip_len >> 8;   req.ipheader.len_l = ip_len & 0xff;
+    req.udpheader.len_h = udp_len >> 8; req.udpheader.len_l = udp_len & 0xff;
+    req.ipheader.checksum = in_cksum((void *)&req.ipheader, sizeof(ip_header_t));
+
+    memcpy(eth + 14, &req, sizeof(req));
+    memcpy(eth + 14 + sizeof(req), options, sizeof(options));
+    return 14 + ip_len;
+}
+
 mac80211_frame *Esp32_WLAN_create_dhcp_request(uint8_t *ip) {
     uint8_t dhcp_commands[]={
         0x35, 1, 3,
