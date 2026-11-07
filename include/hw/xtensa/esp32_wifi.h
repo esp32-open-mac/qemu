@@ -29,6 +29,7 @@ typedef struct Esp32WifiState {
     int dma_inlink_address;
     uint32_t ap_state;
     int inject_queue_size;
+    char *wpa_passphrase;   /* NULL = open network */
     struct mac80211_frame *inject_queue;
     int inject_timer_running;
     unsigned int inject_sequence_number;

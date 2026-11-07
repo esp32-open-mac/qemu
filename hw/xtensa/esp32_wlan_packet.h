@@ -51,6 +51,16 @@ struct mac80211_frame *Esp32_WLAN_create_data_packet(Esp32WifiState *s, const ui
 struct mac80211_frame *Esp32_WLAN_create_ack(void);
 struct mac80211_frame *Esp32_WLAN_create_dhcp_discover(void);
 struct mac80211_frame *Esp32_WLAN_create_dhcp_request(uint8_t *ip);
+struct mac80211_frame *Esp32_WLAN_create_eapol_msg1(const uint8_t *sta_mac,
+                                                   const uint8_t *anonce,
+                                                   uint64_t replay);
+struct mac80211_frame *Esp32_WLAN_create_eapol_msg3(const uint8_t *anonce,
+                                                   uint64_t replay,
+                                                   const uint8_t ptk[48]);
+void Esp32_WLAN_wpa_derive(const char *ssid, const uint8_t *aa, const uint8_t *spa,
+                           const uint8_t *anonce, const uint8_t *snonce,
+                           uint8_t ptk[48]);
+void Esp32_WLAN_set_passphrase(const char *pass);
 int Esp32_WLAN_build_dhcp_reply(uint8_t *eth, const uint8_t *client_mac,
                                 uint32_t xid, uint8_t msgtype);
 void insertCRC(mac80211_frame *frame);
